@@ -18,7 +18,7 @@ extern "C" {
 int main(int argc, const char * argv[]) {
     
     avformat_network_init();
-    std::cout << "Hello, World!\n";
+    std::cout << "working\n";
     
     return 0;
 }
