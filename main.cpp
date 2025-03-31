@@ -6,19 +6,11 @@
 //
 
 #include <iostream>
-extern "C" {
+#include "core/core.h"
 
-#include <libavformat/avformat.h>
-#include <libavcodec/avcodec.h>
-#include <libswscale/swscale.h>
-#include <libavutil/imgutils.h>
-
-}
 
 int main(int argc, const char * argv[]) {
     
-    avformat_network_init();
-    std::cout << "working\n";
-    
+    initialize();
     return 0;
 }
