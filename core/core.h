@@ -21,6 +21,7 @@ extern "C" {
 #include <fstream>
 #include <sstream>
 #include <vector>
+#include <thread>
 
 #include <GL/glew.h>
 #include <glfw3.h>
@@ -32,25 +33,24 @@ extern "C" {
 #include <glm/vec4.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+std::mutex frameMutex;
+std::atomic<bool> isRunning(true);
+uint8_t* frameData;
+
 #include "render/shader.h"
 #include "render/texture.h"
 
+Texture texture;
 Shader shader;
 GLFWwindow* window;
+
+bool firstFrame = false;
 
 #include "object/plane.h"
 #include "object/camera.h"
 
-void initialize() {
-    
-    
-    if (!glfwInit()) {
-        throw std::runtime_error("Couldn't initialize glfw");
-    }
-    
-    
-    
-    
+
+void loadFrames(int* _width, int* _height, bool runForever) {
     avformat_network_init();
     const char* videoPath = "/Users/dmitriwamback/Documents/Projects/FFMPEG OpenGL/FFMPEG OpenGL/test.mp4";
     
@@ -82,7 +82,11 @@ void initialize() {
     avcodec_open2(codecCtx, pCodec, nullptr);
     
     int width = codecCtx->width, height = codecCtx->height;
-    uint8_t* frameData = static_cast<uint8_t*>(malloc(width * height * 3));
+    
+    *_width = width;
+    *_height = height;
+    
+    frameData = static_cast<uint8_t*>(malloc(width * height * 3));
     
     AVFrame *frame = av_frame_alloc(), *frameRGB = av_frame_alloc();
     SwsContext* swsCtx = sws_getContext(width, height, codecCtx->pix_fmt, width, height, AV_PIX_FMT_RGB24, SWS_BILINEAR, nullptr, nullptr, nullptr);
@@ -92,21 +96,29 @@ void initialize() {
     av_image_fill_arrays(frameRGB->data, frameRGB->linesize, buffer, AV_PIX_FMT_RGB24, width, height, 1);
     
     AVPacket* packet = av_packet_alloc();
-    
-    while (av_read_frame(formatCtx, packet) >= 0) {
         
-        if (packet->stream_index != videoStream) continue;
+    do {
+        while (av_read_frame(formatCtx, packet) >= 0 && isRunning) {
             
-        if (avcodec_send_packet(codecCtx, packet) != 0) continue;
-        if (avcodec_receive_frame(codecCtx, frame) != 0) continue;
+            if (packet->stream_index != videoStream) continue;
+            
+            if (avcodec_send_packet(codecCtx, packet) != 0) continue;
+            if (avcodec_receive_frame(codecCtx, frame) != 0) continue;
+            
+            sws_scale(swsCtx, frame->data, frame->linesize, 0, height, frameRGB->data, frameRGB->linesize);
+            
+            memcpy(frameData, frameRGB->data[0], nbBytes);
+            if (!runForever) {
+                return;
+            }
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(7));
+            av_packet_unref(packet);
+        }
         
-        sws_scale(swsCtx, frame->data, frame->linesize, 0, height, frameRGB->data, frameRGB->linesize);
+        av_seek_frame(formatCtx, videoStream, 0, AVSEEK_FLAG_BACKWARD);
         
-        memcpy(frameData, frameRGB->data[0], nbBytes);
-        av_packet_unref(packet);
-        
-        break;
-    }
+    } while (runForever && isRunning);
     
     av_frame_free(&frame);
     av_frame_free(&frameRGB);
@@ -114,7 +126,15 @@ void initialize() {
     avcodec_free_context(&codecCtx);
     avformat_close_input(&formatCtx);
     av_free(buffer);
+}
+
+
+void initialize() {
     
+    
+    if (!glfwInit()) {
+        throw std::runtime_error("Couldn't initialize glfw");
+    }
     
 #if defined(__APPLE__)
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
@@ -133,12 +153,16 @@ void initialize() {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_PROGRAM_POINT_SIZE);
     
+    int width, height;
+    loadFrames(&width, &height, false);
+    texture = Texture::LoadTextureWithBytes(frameData, width, height);
+    
+    std::thread video = std::thread(loadFrames, &width, &height, true);
+    
     glfwSetCursorPosCallback(window, cursor_position_callback);
     glfwSetScrollCallback(window, scroll_callback);
     
     shader = Shader::Create("/Users/dmitriwamback/Documents/Projects/FFMPEG OpenGL/FFMPEG OpenGL/shader/main");
-    
-    Texture texture = Texture::LoadTextureWithBytes(frameData, width, height);
     
     Plane plane = Plane::Create();
     
@@ -167,9 +191,13 @@ void initialize() {
         texture.Bind();
         plane.Render(shader);
         
+        texture.UpdateWithBytes(frameData);
+        
         glfwPollEvents();
         glfwSwapBuffers(window);
     }
+    isRunning = false;
+    video.join();
 }
 
 #endif /* core_h */

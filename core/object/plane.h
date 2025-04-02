@@ -33,7 +33,7 @@ Plane Plane::Create() {
     
     plane.position = glm::vec3(-3.0f, 4.0f, -3.0f);
     plane.rotation = glm::vec3(90.0f, 0.0f, 0.0f);
-    plane.scale = glm::vec3(6.0f, 6.0f, 6.0f);
+    plane.scale = glm::vec3(9.0f, 6.0f, 6.0f);
     
     plane.color = glm::vec3(1.0f);
     
